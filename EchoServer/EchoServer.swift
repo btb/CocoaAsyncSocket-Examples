@@ -21,8 +21,7 @@ class EchoServer: NSObject, GCDAsyncSocketDelegate {
 
 	var listenSocket: GCDAsyncSocket!
 
-	var connectedSockets: [GCDAsyncSocket] = []
-	let connectedSocketsSync = DispatchQueue(label: "connectedSocketsSync")
+	var connectedSockets = Set<GCDAsyncSocket>()
 	
 	var isRunning: Bool = false
 	
@@ -34,10 +33,6 @@ class EchoServer: NSObject, GCDAsyncSocketDelegate {
 		self.view = view
 		
 		listenSocket = GCDAsyncSocket(delegate: self, delegateQueue: socketQueue)
-
-		connectedSocketsSync.sync {
-			connectedSockets = []
-		}
 	}
 	
 	func startStop() {
@@ -67,13 +62,11 @@ class EchoServer: NSObject, GCDAsyncSocketDelegate {
 			listenSocket.disconnect()
 			
 			// Stop any client connections
-			connectedSocketsSync.sync {
-				for socket in connectedSockets {
-					// Call disconnect on the socket,
-					// which will invoke the socketDidDisconnect: method,
-					// which will remove the socket from the list.
-					socket.disconnect()
-				}
+			for socket in connectedSockets {
+				// Call disconnect on the socket,
+				// which will invoke the socketDidDisconnect: method,
+				// which will remove the socket from the list.
+				socket.disconnect()
 			}
 
 			view.logInfo("Stopped Echo server")
@@ -87,9 +80,7 @@ class EchoServer: NSObject, GCDAsyncSocketDelegate {
 	func socket(_ sock: GCDAsyncSocket, didAcceptNewSocket newSocket: GCDAsyncSocket) {
 		// This method is executed on the socketQueue (not the main thread)
 		
-		connectedSocketsSync.sync {
-			connectedSockets.append(newSocket)
-		}
+		connectedSockets.insert(newSocket)
 
 		let host = newSocket.connectedHost ?? "<undefined>"
 		let port = newSocket.connectedPort
@@ -109,7 +100,7 @@ class EchoServer: NSObject, GCDAsyncSocketDelegate {
 	func socket(_ sock: GCDAsyncSocket, didWriteDataWithTag tag: Int) {
 		// This method is executed on the socketQueue (not the main thread)
 		
-		if (tag == ECHO_MSG) {
+		if tag == ECHO_MSG {
 			sock.readData(to: GCDAsyncSocket.crlfData(), withTimeout: READ_TIMEOUT, tag: 0)
 		}
 	}
@@ -156,11 +147,7 @@ class EchoServer: NSObject, GCDAsyncSocketDelegate {
 				self.view.logInfo("Client Disconnected")
 			}
 			
-			connectedSocketsSync.sync {
-				if let index = connectedSockets.index(of: sock) {
-					connectedSockets.remove(at: index)
-				}
-			}
+			connectedSockets.remove(sock)
 		}
 	}
 }
